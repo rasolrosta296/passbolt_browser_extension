@@ -4,6 +4,10 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
 
+## [5.15.1] - 2026-08-26
+### Fixed
+- PB-54190 - Firefox crash issues [post v5.15.0 release]
+
 ## [5.15.0] - 2026-08-20
 ### Added
 PB-53103 - AUTOFILL EPIC - Autofill improvements
