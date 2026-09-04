@@ -28,6 +28,7 @@
     "!src/**/*.test.data.js"
   ],
   "moduleNameMapper": {
+    "^cborg$": "<rootDir>/node_modules/cborg/cborg.js",
     "\\.svg$": "<rootDir>/test/mocks/svg.js"
   }
 }

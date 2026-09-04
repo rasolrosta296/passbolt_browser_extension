@@ -12,6 +12,8 @@
   },
   "dependencies": {
     "await-lock": "^2.1.0",
+    "@hpke/core": "1.9.0",
+    "cborg": "6.1.2",
     "downloadjs": "^1.4.7",
     "eckey-utils": "^0.7.14",
     "i18next": "^26.3.4",
