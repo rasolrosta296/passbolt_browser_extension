@@ -23,6 +23,8 @@ import GetServerKeyController from "../controller/auth/getServerKeyController";
 import ReplaceServerKeyController from "../controller/auth/replaceServerKeyController";
 import ReloadTabController from "../controller/tab/reloadTabController";
 import RedirectPostLoginController from "../controller/auth/redirectPostLoginController";
+import KeycloakCryptoEnrollmentController from "../controller/keycloakSso/keycloakCryptoEnrollmentController";
+import KeycloakCryptoLoginController from "../controller/keycloakSso/keycloakCryptoLoginController";
 
 /**
  * Listens to the authentication events
@@ -122,6 +124,16 @@ const listen = function (worker, apiClientOptions, account) {
   worker.port.on("passbolt.auth.login", async (requestId, passphrase, remember) => {
     const controller = new AuthLoginController(worker, requestId, apiClientOptions, account);
     await controller._exec(passphrase, remember);
+  });
+
+  worker.port.on("passbolt.keycloak-sso.crypto-enroll", async (requestId) => {
+    const controller = new KeycloakCryptoEnrollmentController(worker, requestId, apiClientOptions, account);
+    await controller._exec();
+  });
+
+  worker.port.on("passbolt.keycloak-sso.crypto-login", async (requestId) => {
+    const controller = new KeycloakCryptoLoginController(worker, requestId, apiClientOptions, account);
+    await controller._exec();
   });
 
   /*
