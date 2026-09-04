@@ -21,6 +21,10 @@ export default class KeycloakCryptoSsoApiService {
     return (await this.client("/auth/keycloak/crypto/release").create(payload)).body;
   }
 
+  async revokeEnrollments() {
+    return (await this.client("/auth/keycloak/crypto/enrollments/revoke").create({})).body;
+  }
+
   client(resourceName) {
     this.apiClientOptions.setResourceName(resourceName);
     return new ApiClient(this.apiClientOptions);

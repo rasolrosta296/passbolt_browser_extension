@@ -21,6 +21,7 @@ import SsoKitServerPartModel from "../../model/sso/ssoKitServerPartModel";
 import PassboltApiFetchError from "passbolt-styleguide/src/shared/lib/Error/PassboltApiFetchError";
 import GenerateSsoKitService from "../../service/sso/generateSsoKitService";
 import KeepSessionAliveService from "../../service/session_storage/keepSessionAliveService";
+import KeycloakCryptoSsoRotationService from "../../service/keycloakSso/keycloakCryptoSsoRotationService";
 
 const RECOVERY_KIT_FILENAME = "passbolt-recovery-kit.asc";
 
@@ -38,6 +39,7 @@ class UpdatePrivateKeyController {
     this.accountModel = new AccountModel();
     this.getOrFindSiteSettingsService = new GetOrFindSiteSettingsService(account, apiClientOptions);
     this.ssoKitServerPartModel = new SsoKitServerPartModel(apiClientOptions);
+    this.keycloakCryptoSsoRotationService = new KeycloakCryptoSsoRotationService(apiClientOptions, account);
   }
 
   /**
@@ -68,8 +70,12 @@ class UpdatePrivateKeyController {
     }
     const siteSettings = await this.getOrFindSiteSettingsService.getOrFind(false);
     const ssoIsEnabled = siteSettings.isPluginEnabled("sso");
+    const keycloakSsoIsEnabled = siteSettings.isPluginEnabled("keycloakSso");
 
     const userPrivateArmoredKey = await this.accountModel.rotatePrivateKeyPassphrase(oldPassphrase, newPassphrase);
+    const revokedClientEnrollmentUuids = keycloakSsoIsEnabled
+      ? await this.keycloakCryptoSsoRotationService.revokeServerEnrollments()
+      : [];
     if (ssoIsEnabled) {
       await this.regenerateSsoKit(newPassphrase);
     }
@@ -79,6 +85,7 @@ class UpdatePrivateKeyController {
       await PassphraseStorageService.set(newPassphrase);
     }
     await FileService.saveFile(RECOVERY_KIT_FILENAME, userPrivateArmoredKey, "text/plain", this.worker.tab.id);
+    await this.keycloakCryptoSsoRotationService.removeLocalEnrollments(revokedClientEnrollmentUuids);
   }
 
   /**
