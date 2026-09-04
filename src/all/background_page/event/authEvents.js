@@ -24,7 +24,10 @@ import ReplaceServerKeyController from "../controller/auth/replaceServerKeyContr
 import ReloadTabController from "../controller/tab/reloadTabController";
 import RedirectPostLoginController from "../controller/auth/redirectPostLoginController";
 import KeycloakCryptoEnrollmentController from "../controller/keycloakSso/keycloakCryptoEnrollmentController";
+import KeycloakCryptoEnrollmentStartController from "../controller/keycloakSso/keycloakCryptoEnrollmentStartController";
 import KeycloakCryptoLoginController from "../controller/keycloakSso/keycloakCryptoLoginController";
+import KeycloakCryptoEnrollmentStatusController from "../controller/keycloakSso/keycloakCryptoEnrollmentStatusController";
+import KeycloakIdentityUnlinkController from "../controller/keycloakSso/keycloakIdentityUnlinkController";
 
 /**
  * Listens to the authentication events
@@ -126,13 +129,31 @@ const listen = function (worker, apiClientOptions, account) {
     await controller._exec(passphrase, remember);
   });
 
-  worker.port.on("passbolt.keycloak-sso.crypto-enroll", async (requestId) => {
-    const controller = new KeycloakCryptoEnrollmentController(worker, requestId, apiClientOptions, account);
+  worker.port.on("passbolt.keycloak-sso.crypto-enroll.start", async (requestId) => {
+    const controller = new KeycloakCryptoEnrollmentStartController(worker, requestId, apiClientOptions, account);
     await controller._exec();
   });
 
+  worker.port.on(
+    "passbolt.keycloak-sso.crypto-enroll.complete",
+    async (requestId, enrollmentMetadata, enrollmentPassphrase) => {
+      const controller = new KeycloakCryptoEnrollmentController(worker, requestId, apiClientOptions, account);
+      await controller._exec(enrollmentMetadata, enrollmentPassphrase);
+    },
+  );
+
   worker.port.on("passbolt.keycloak-sso.crypto-login", async (requestId) => {
     const controller = new KeycloakCryptoLoginController(worker, requestId, apiClientOptions, account);
+    await controller._exec();
+  });
+
+  worker.port.on("passbolt.keycloak-sso.crypto-enrollment.get-status", async (requestId) => {
+    const controller = new KeycloakCryptoEnrollmentStatusController(worker, requestId, apiClientOptions, account);
+    await controller._exec();
+  });
+
+  worker.port.on("passbolt.keycloak-sso.identity.unlink", async (requestId) => {
+    const controller = new KeycloakIdentityUnlinkController(worker, requestId, apiClientOptions, account);
     await controller._exec();
   });
 

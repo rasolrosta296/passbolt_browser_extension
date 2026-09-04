@@ -23,7 +23,7 @@ export const DOMAINS = Object.freeze({
 });
 
 const encoder = new TextEncoder();
-const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const fingerprintPattern = /^[0-9A-F]{40}$/;
 const thumbprintPattern = /^[\w-]{43}$/;
 const dnsLabelPattern = /^(?!-)[a-z0-9-]{1,63}(?<!-)$/;
@@ -65,7 +65,7 @@ export function validateContext(context) {
   }
   for (const field of ["user_uuid", "identity_uuid", "enrollment_uuid", "client_enrollment_uuid"]) {
     if (!uuidPattern.test(context[field])) {
-      throw new TypeError(`${field} must be a canonical lowercase UUIDv4.`);
+      throw new TypeError(`${field} must be a canonical lowercase UUID.`);
     }
   }
   if (

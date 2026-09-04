@@ -341,7 +341,7 @@ describe("UpdatePrivateKeyController", () => {
       expect(mockedSaveFile).not.toHaveBeenCalled();
     });
 
-    it("Should revoke Keycloak crypto enrollments before persisting a passphrase rotation.", async () => {
+    it("Should hold the Keycloak rotation barrier across the private-key update.", async () => {
       const worker = { tab: { id: uuidv4() } };
       const clientEnrollmentUuid = uuidv4();
       const order = [];
@@ -351,12 +351,10 @@ describe("UpdatePrivateKeyController", () => {
         order.push("validate");
         return "rotated-armored-key";
       });
-      jest
-        .spyOn(controller.keycloakCryptoSsoRotationService, "revokeServerEnrollments")
-        .mockImplementation(async () => {
-          order.push("revoke-server");
-          return [clientEnrollmentUuid];
-        });
+      jest.spyOn(controller.keycloakCryptoSsoRotationService, "begin").mockImplementation(async () => {
+        order.push("start-barrier");
+        return { capability: "A".repeat(43), clientEnrollmentUuids: [clientEnrollmentUuid] };
+      });
       jest.spyOn(controller.accountModel, "updatePrivateKey").mockImplementation(async () => {
         order.push("persist-rotation");
       });
@@ -365,42 +363,53 @@ describe("UpdatePrivateKeyController", () => {
       jest.spyOn(controller.keycloakCryptoSsoRotationService, "removeLocalEnrollments").mockImplementation(async () => {
         order.push("cleanup-local");
       });
+      jest.spyOn(controller.keycloakCryptoSsoRotationService, "complete").mockImplementation(async () => {
+        order.push("complete-barrier");
+      });
 
       await controller.exec("old-passphrase", "new-passphrase");
 
-      expect(order).toEqual(["validate", "revoke-server", "persist-rotation", "save-recovery-kit", "cleanup-local"]);
+      expect(order).toEqual([
+        "validate",
+        "start-barrier",
+        "cleanup-local",
+        "persist-rotation",
+        "complete-barrier",
+        "save-recovery-kit",
+      ]);
       expect(controller.keycloakCryptoSsoRotationService.removeLocalEnrollments).toHaveBeenCalledWith([
         clientEnrollmentUuid,
       ]);
     });
 
-    it("Should abort passphrase rotation when Keycloak enrollment revocation fails.", async () => {
+    it("Should abort passphrase rotation when the Keycloak rotation barrier cannot start.", async () => {
       const worker = { tab: { id: uuidv4() } };
       mockOrganisationSettingCall(false, true);
       const controller = new UpdatePrivateKeyController(worker, null, defaultApiClientOptions(), account);
       jest.spyOn(controller.accountModel, "rotatePrivateKeyPassphrase").mockResolvedValue("rotated-armored-key");
       jest
-        .spyOn(controller.keycloakCryptoSsoRotationService, "revokeServerEnrollments")
-        .mockRejectedValue(new Error("Server revocation failed"));
+        .spyOn(controller.keycloakCryptoSsoRotationService, "begin")
+        .mockRejectedValue(new Error("Rotation barrier failed"));
       jest.spyOn(controller.accountModel, "updatePrivateKey");
       jest.spyOn(controller.keycloakCryptoSsoRotationService, "removeLocalEnrollments");
 
-      await expect(controller.exec("old-passphrase", "new-passphrase")).rejects.toThrow("Server revocation failed");
+      await expect(controller.exec("old-passphrase", "new-passphrase")).rejects.toThrow("Rotation barrier failed");
 
       expect(controller.accountModel.updatePrivateKey).not.toHaveBeenCalled();
       expect(mockedSaveFile).not.toHaveBeenCalled();
       expect(controller.keycloakCryptoSsoRotationService.removeLocalEnrollments).not.toHaveBeenCalled();
     });
 
-    it("Should keep server revocation authoritative when local enrollment cleanup fails.", async () => {
+    it("Should fail the active barrier when local enrollment cleanup fails before the key update.", async () => {
       const worker = { tab: { id: uuidv4() } };
       const clientEnrollmentUuid = uuidv4();
       mockOrganisationSettingCall(false, true);
       const controller = new UpdatePrivateKeyController(worker, null, defaultApiClientOptions(), account);
       jest.spyOn(controller.accountModel, "rotatePrivateKeyPassphrase").mockResolvedValue("rotated-armored-key");
       jest
-        .spyOn(controller.keycloakCryptoSsoRotationService, "revokeServerEnrollments")
-        .mockResolvedValue([clientEnrollmentUuid]);
+        .spyOn(controller.keycloakCryptoSsoRotationService, "begin")
+        .mockResolvedValue({ capability: "A".repeat(43), clientEnrollmentUuids: [clientEnrollmentUuid] });
+      jest.spyOn(controller.keycloakCryptoSsoRotationService, "fail").mockResolvedValue();
       jest.spyOn(controller.accountModel, "updatePrivateKey").mockResolvedValue();
       jest.spyOn(PassphraseStorageService, "flushPassphrase").mockResolvedValue();
       mockedSaveFile.mockResolvedValue();
@@ -410,9 +419,30 @@ describe("UpdatePrivateKeyController", () => {
 
       await expect(controller.exec("old-passphrase", "new-passphrase")).rejects.toThrow("IndexedDB cleanup failed");
 
-      expect(controller.keycloakCryptoSsoRotationService.revokeServerEnrollments).toHaveBeenCalledTimes(1);
+      expect(controller.keycloakCryptoSsoRotationService.begin).toHaveBeenCalledTimes(1);
+      expect(controller.keycloakCryptoSsoRotationService.fail).toHaveBeenCalledWith("A".repeat(43));
+      expect(controller.accountModel.updatePrivateKey).not.toHaveBeenCalled();
+      expect(mockedSaveFile).not.toHaveBeenCalled();
+    });
+
+    it("Should leave the barrier active when completion is uncertain after the key update.", async () => {
+      const worker = { tab: { id: uuidv4() } };
+      mockOrganisationSettingCall(false, true);
+      const controller = new UpdatePrivateKeyController(worker, null, defaultApiClientOptions(), account);
+      jest.spyOn(controller.accountModel, "rotatePrivateKeyPassphrase").mockResolvedValue("rotated-armored-key");
+      jest.spyOn(controller.keycloakCryptoSsoRotationService, "begin").mockResolvedValue({
+        capability: "A".repeat(43),
+        clientEnrollmentUuids: [],
+      });
+      jest.spyOn(controller.keycloakCryptoSsoRotationService, "removeLocalEnrollments").mockResolvedValue();
+      jest.spyOn(controller.accountModel, "updatePrivateKey").mockResolvedValue();
+      jest.spyOn(controller.keycloakCryptoSsoRotationService, "complete").mockRejectedValue(new Error("timeout"));
+      jest.spyOn(controller.keycloakCryptoSsoRotationService, "fail").mockResolvedValue();
+
+      await expect(controller.exec("old-passphrase", "new-passphrase")).rejects.toThrow("timeout");
+
       expect(controller.accountModel.updatePrivateKey).toHaveBeenCalledWith("rotated-armored-key");
-      expect(mockedSaveFile).toHaveBeenCalled();
+      expect(controller.keycloakCryptoSsoRotationService.fail).not.toHaveBeenCalled();
     });
 
     it("Should leave normal passphrase rotation unchanged when Keycloak SSO is disabled.", async () => {
@@ -423,11 +453,11 @@ describe("UpdatePrivateKeyController", () => {
       jest.spyOn(controller.accountModel, "updatePrivateKey").mockResolvedValue();
       jest.spyOn(PassphraseStorageService, "flushPassphrase").mockResolvedValue();
       mockedSaveFile.mockResolvedValue();
-      jest.spyOn(KeycloakCryptoSsoRotationService.prototype, "revokeServerEnrollments");
+      jest.spyOn(KeycloakCryptoSsoRotationService.prototype, "begin");
 
       await controller.exec("old-passphrase", "new-passphrase");
 
-      expect(KeycloakCryptoSsoRotationService.prototype.revokeServerEnrollments).not.toHaveBeenCalled();
+      expect(KeycloakCryptoSsoRotationService.prototype.begin).not.toHaveBeenCalled();
       expect(controller.accountModel.updatePrivateKey).toHaveBeenCalledWith("rotated-armored-key");
     });
   });

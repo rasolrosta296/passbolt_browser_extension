@@ -72,20 +72,40 @@ class UpdatePrivateKeyController {
     const ssoIsEnabled = siteSettings.isPluginEnabled("sso");
     const keycloakSsoIsEnabled = siteSettings.isPluginEnabled("keycloakSso");
 
-    const userPrivateArmoredKey = await this.accountModel.rotatePrivateKeyPassphrase(oldPassphrase, newPassphrase);
-    const revokedClientEnrollmentUuids = keycloakSsoIsEnabled
-      ? await this.keycloakCryptoSsoRotationService.revokeServerEnrollments()
-      : [];
-    if (ssoIsEnabled) {
-      await this.regenerateSsoKit(newPassphrase);
+    let rotation = null;
+    let privateKeyUpdated = false;
+    try {
+      const userPrivateArmoredKey = await this.accountModel.rotatePrivateKeyPassphrase(oldPassphrase, newPassphrase);
+      if (keycloakSsoIsEnabled) {
+        rotation = await this.keycloakCryptoSsoRotationService.begin();
+        await this.keycloakCryptoSsoRotationService.removeLocalEnrollments(rotation.clientEnrollmentUuids);
+      }
+      if (ssoIsEnabled) {
+        await this.regenerateSsoKit(newPassphrase);
+      }
+      await this.accountModel.updatePrivateKey(userPrivateArmoredKey);
+      privateKeyUpdated = true;
+      if (rotation) {
+        await this.keycloakCryptoSsoRotationService.complete(rotation.capability);
+      }
+      await PassphraseStorageService.flushPassphrase();
+      if (KeepSessionAliveService.isStarted()) {
+        await PassphraseStorageService.set(newPassphrase);
+      }
+      await FileService.saveFile(RECOVERY_KIT_FILENAME, userPrivateArmoredKey, "text/plain", this.worker.tab.id);
+    } catch (error) {
+      if (rotation && !privateKeyUpdated) {
+        try {
+          await this.keycloakCryptoSsoRotationService.fail(rotation.capability);
+        } catch (barrierError) {
+          throw new AggregateError(
+            [error, barrierError],
+            "The private key was not updated and the Keycloak SSO rotation barrier could not be finalized.",
+          );
+        }
+      }
+      throw error;
     }
-    await this.accountModel.updatePrivateKey(userPrivateArmoredKey);
-    await PassphraseStorageService.flushPassphrase();
-    if (KeepSessionAliveService.isStarted()) {
-      await PassphraseStorageService.set(newPassphrase);
-    }
-    await FileService.saveFile(RECOVERY_KIT_FILENAME, userPrivateArmoredKey, "text/plain", this.worker.tab.id);
-    await this.keycloakCryptoSsoRotationService.removeLocalEnrollments(revokedClientEnrollmentUuids);
   }
 
   /**

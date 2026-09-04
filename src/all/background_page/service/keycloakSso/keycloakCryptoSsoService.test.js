@@ -4,6 +4,7 @@ import BrowserProfileEnrollmentStorage from "./browserProfileEnrollmentStorage";
 import KeycloakCryptoEnvelopeService from "./keycloakCryptoEnvelopeService";
 import KeycloakCryptoSsoService from "./keycloakCryptoSsoService";
 import KeycloakOidcTabService from "./keycloakOidcTabService";
+import CheckPassphraseService from "../crypto/checkPassphraseService";
 
 jest.mock("../../model/keyring");
 jest.mock("../crypto/checkPassphraseService");
@@ -51,6 +52,54 @@ describe("KeycloakCryptoSsoService authentication boundary", () => {
     PostLoginService.exec.mockResolvedValue();
   });
 
+  it("completes fresh OIDC before returning enrollment metadata to the passphrase UI", async () => {
+    service.api.startEnrollment.mockResolvedValue({
+      authorization_url: "https://keycloak.example.test/authorize",
+      enrollment_id: "20000000-0000-4000-8000-000000000002",
+      identity_id: "30000000-0000-4000-8000-000000000003",
+      protocol_version: "passbolt-keycloak-sso-v1",
+      crypto_suite: "AES-256-GCM+HPKE-P256-HKDF-SHA256-AES128GCM",
+    });
+
+    const result = await service.startEnrollment();
+
+    expect(KeycloakOidcTabService.authenticate).toHaveBeenCalledTimes(1);
+    expect(CheckPassphraseService.prototype.checkPassphrase).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      enrollment_id: "20000000-0000-4000-8000-000000000002",
+      identity_id: "30000000-0000-4000-8000-000000000003",
+      protocol_version: "passbolt-keycloak-sso-v1",
+      crypto_suite: "AES-256-GCM+HPKE-P256-HKDF-SHA256-AES128GCM",
+    });
+  });
+
+  it("uses the Quick Access passphrase only for local enrollment completion", async () => {
+    const metadata = {
+      enrollment_id: "20000000-0000-4000-8000-000000000002",
+      identity_id: "30000000-0000-4000-8000-000000000003",
+      protocol_version: "passbolt-keycloak-sso-v1",
+      crypto_suite: "AES-256-GCM+HPKE-P256-HKDF-SHA256-AES128GCM",
+    };
+    const saved = { enrollmentId: metadata.enrollment_id, clientEnrollmentUuid: "client-id" };
+    KeycloakCryptoEnvelopeService.create.mockResolvedValue({
+      upload: { server_share: "dummy", openpgp_transcript_signature: "dummy" },
+      local: saved,
+      rawKs: new Uint8Array(32),
+    });
+    service.api.enroll.mockResolvedValue({
+      enrollment_id: metadata.enrollment_id,
+      client_enrollment_uuid: "client-id",
+    });
+
+    await service.completeEnrollment(metadata, "dummy-passphrase");
+
+    expect(CheckPassphraseService.prototype.checkPassphrase).toHaveBeenCalledWith("dummy-passphrase");
+    expect(KeycloakCryptoEnvelopeService.create).toHaveBeenCalledWith("dummy-passphrase", account, metadata);
+    expect(KeycloakOidcTabService.authenticate).not.toHaveBeenCalled();
+    expect(BrowserProfileEnrollmentStorage.save).toHaveBeenCalledWith(saved);
+    expect(saved).not.toHaveProperty("passphrase");
+  });
+
   it("establishes authentication only after unchanged GPGAuth succeeds", async () => {
     await service.login();
     expect(KeycloakOidcTabService.authenticate).toHaveBeenCalled();
@@ -84,5 +133,45 @@ describe("KeycloakCryptoSsoService authentication boundary", () => {
     expect(KeycloakOidcTabService.authenticate).not.toHaveBeenCalled();
     expect(AuthVerifyLoginChallengeService.prototype.verifyAndValidateLoginChallenge).not.toHaveBeenCalled();
     expect(PostLoginService.exec).not.toHaveBeenCalled();
+  });
+
+  it("reports only a valid enrollment belonging to the current account", async () => {
+    await expect(service.hasLocalEnrollment()).resolves.toBe(true);
+    local.context.user_uuid = "20000000-0000-4000-8000-000000000002";
+    await expect(service.hasLocalEnrollment()).resolves.toBe(false);
+  });
+
+  it("reports no local enrollment without beginning OIDC", async () => {
+    BrowserProfileEnrollmentStorage.get.mockResolvedValue(null);
+    await expect(service.hasLocalEnrollment()).resolves.toBe(false);
+    expect(service.api.startLogin).not.toHaveBeenCalled();
+  });
+
+  it("unlinks on the server before deleting the local enrollment", async () => {
+    const clientEnrollmentUuid = "20000000-0000-4000-8000-000000000002";
+    local.clientEnrollmentUuid = clientEnrollmentUuid;
+    service.api.unlinkIdentity.mockResolvedValue({ client_enrollment_uuids: [clientEnrollmentUuid] });
+
+    await expect(service.unlink()).resolves.toEqual({ clientEnrollmentUuids: [clientEnrollmentUuid] });
+
+    expect(service.api.unlinkIdentity).toHaveBeenCalledTimes(1);
+    expect(BrowserProfileEnrollmentStorage.remove).toHaveBeenCalledWith("profile-key");
+    expect(service.api.unlinkIdentity.mock.invocationCallOrder[0]).toBeLessThan(
+      BrowserProfileEnrollmentStorage.remove.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("deletes orphaned local enrollment after a valid empty server unlink result", async () => {
+    service.api.unlinkIdentity.mockResolvedValue({ client_enrollment_uuids: [] });
+
+    await expect(service.unlink()).resolves.toEqual({ clientEnrollmentUuids: [] });
+
+    expect(BrowserProfileEnrollmentStorage.remove).toHaveBeenCalledWith("profile-key");
+  });
+
+  it("fails closed on a malformed unlink response and retains local state", async () => {
+    service.api.unlinkIdentity.mockResolvedValue({ client_enrollment_uuids: ["invalid"] });
+    await expect(service.unlink()).rejects.toThrow("The API returned an invalid Keycloak unlink result.");
+    expect(BrowserProfileEnrollmentStorage.remove).not.toHaveBeenCalled();
   });
 });

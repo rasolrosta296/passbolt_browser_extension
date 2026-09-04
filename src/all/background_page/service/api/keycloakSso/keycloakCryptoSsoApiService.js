@@ -21,8 +21,32 @@ export default class KeycloakCryptoSsoApiService {
     return (await this.client("/auth/keycloak/crypto/release").create(payload)).body;
   }
 
-  async revokeEnrollments() {
-    return (await this.client("/auth/keycloak/crypto/enrollments/revoke").create({})).body;
+  async startPassphraseRotation() {
+    return (await this.client("/auth/keycloak/crypto/rotation/start").create({})).body;
+  }
+
+  async completePassphraseRotation(rotationCapability) {
+    return (
+      await this.client("/auth/keycloak/crypto/rotation/complete").create({
+        rotation_capability: rotationCapability,
+      })
+    ).body;
+  }
+
+  async failPassphraseRotation(rotationCapability) {
+    return (
+      await this.client("/auth/keycloak/crypto/rotation/fail").create({
+        rotation_capability: rotationCapability,
+      })
+    ).body;
+  }
+
+  async unlinkIdentity() {
+    return (
+      await this.client("/auth/keycloak/unlink").create({
+        confirmation: "unlink_keycloak_identity",
+      })
+    ).body;
   }
 
   client(resourceName) {
