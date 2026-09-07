@@ -24,8 +24,10 @@ import ReplaceServerKeyController from "../controller/auth/replaceServerKeyContr
 import ReloadTabController from "../controller/tab/reloadTabController";
 import RedirectPostLoginController from "../controller/auth/redirectPostLoginController";
 import KeycloakCryptoEnrollmentController from "../controller/keycloakSso/keycloakCryptoEnrollmentController";
+import KeycloakCryptoEnrollmentOpenDetachedController from "../controller/keycloakSso/keycloakCryptoEnrollmentOpenDetachedController";
 import KeycloakCryptoEnrollmentStartController from "../controller/keycloakSso/keycloakCryptoEnrollmentStartController";
 import KeycloakCryptoLoginController from "../controller/keycloakSso/keycloakCryptoLoginController";
+import KeycloakCryptoLoginOpenDetachedController from "../controller/keycloakSso/keycloakCryptoLoginOpenDetachedController";
 import KeycloakCryptoEnrollmentStatusController from "../controller/keycloakSso/keycloakCryptoEnrollmentStatusController";
 import KeycloakIdentityUnlinkController from "../controller/keycloakSso/keycloakIdentityUnlinkController";
 
@@ -134,6 +136,11 @@ const listen = function (worker, apiClientOptions, account) {
     await controller._exec();
   });
 
+  worker.port.on("passbolt.keycloak-sso.crypto-enroll.open-detached", async (requestId) => {
+    const controller = new KeycloakCryptoEnrollmentOpenDetachedController(worker, requestId);
+    await controller._exec();
+  });
+
   worker.port.on(
     "passbolt.keycloak-sso.crypto-enroll.complete",
     async (requestId, enrollmentMetadata, enrollmentPassphrase) => {
@@ -144,6 +151,11 @@ const listen = function (worker, apiClientOptions, account) {
 
   worker.port.on("passbolt.keycloak-sso.crypto-login", async (requestId) => {
     const controller = new KeycloakCryptoLoginController(worker, requestId, apiClientOptions, account);
+    await controller._exec();
+  });
+
+  worker.port.on("passbolt.keycloak-sso.crypto-login.open-detached", async (requestId) => {
+    const controller = new KeycloakCryptoLoginOpenDetachedController(worker, requestId);
     await controller._exec();
   });
 

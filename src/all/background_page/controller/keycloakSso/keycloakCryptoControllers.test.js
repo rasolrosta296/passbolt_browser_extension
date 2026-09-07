@@ -1,9 +1,12 @@
 import KeycloakCryptoEnrollmentController from "./keycloakCryptoEnrollmentController";
+import KeycloakCryptoEnrollmentOpenDetachedController from "./keycloakCryptoEnrollmentOpenDetachedController";
 import KeycloakCryptoEnrollmentStartController from "./keycloakCryptoEnrollmentStartController";
 import KeycloakCryptoLoginController from "./keycloakCryptoLoginController";
+import KeycloakCryptoLoginOpenDetachedController from "./keycloakCryptoLoginOpenDetachedController";
 import KeycloakCryptoEnrollmentStatusController from "./keycloakCryptoEnrollmentStatusController";
 import KeycloakIdentityUnlinkController from "./keycloakIdentityUnlinkController";
 import KeycloakCryptoSsoService from "../../service/keycloakSso/keycloakCryptoSsoService";
+import { QuickAccessService } from "../../service/ui/quickAccess.service";
 
 jest.mock("../../service/keycloakSso/keycloakCryptoSsoService");
 
@@ -55,6 +58,47 @@ describe("Keycloak cryptographic SSO controllers", () => {
     expect(worker.port.emit).toHaveBeenCalledWith("request-id", "SUCCESS", metadata);
   });
 
+  it("opens a Keycloak enrollment Quick Access in detached mode without starting OIDC", async () => {
+    const openInDetachedMode = jest.spyOn(QuickAccessService, "openInDetachedMode").mockResolvedValue({ id: 42 });
+    const open = jest.spyOn(QuickAccessService, "open");
+    const worker = { name: "QuickAccess", port: { emit: jest.fn() } };
+    const controller = new KeycloakCryptoEnrollmentOpenDetachedController(worker, "request-id");
+
+    await controller._exec();
+
+    expect(openInDetachedMode).toHaveBeenCalledWith([{ name: "feature", value: "keycloak-sso" }]);
+    expect(open).not.toHaveBeenCalled();
+    expect(KeycloakCryptoSsoService.prototype.startEnrollment).not.toHaveBeenCalled();
+    expect(worker.port.emit).toHaveBeenCalledWith("request-id", "SUCCESS");
+    openInDetachedMode.mockRestore();
+    open.mockRestore();
+  });
+
+  it("rejects detached Keycloak enrollment handoff outside Quick Access", async () => {
+    const openInDetachedMode = jest.spyOn(QuickAccessService, "openInDetachedMode").mockResolvedValue({ id: 42 });
+    const worker = { name: "App", port: { emit: jest.fn() } };
+    const controller = new KeycloakCryptoEnrollmentOpenDetachedController(worker, "request-id");
+
+    await controller._exec();
+
+    expect(openInDetachedMode).not.toHaveBeenCalled();
+    expect(worker.port.emit).toHaveBeenCalledWith("request-id", "ERROR", expect.any(Error));
+    openInDetachedMode.mockRestore();
+  });
+
+  it("reports detached Keycloak enrollment handoff failures without starting OIDC", async () => {
+    const error = new Error("Window creation failed");
+    const openInDetachedMode = jest.spyOn(QuickAccessService, "openInDetachedMode").mockRejectedValue(error);
+    const worker = { name: "QuickAccess", port: { emit: jest.fn() } };
+    const controller = new KeycloakCryptoEnrollmentOpenDetachedController(worker, "request-id");
+
+    await controller._exec();
+
+    expect(KeycloakCryptoSsoService.prototype.startEnrollment).not.toHaveBeenCalled();
+    expect(worker.port.emit).toHaveBeenCalledWith("request-id", "ERROR", error);
+    openInDetachedMode.mockRestore();
+  });
+
   it("rejects cryptographic login outside extension-owned Quick Access UI", async () => {
     const worker = { name: "Auth", port: { emit: jest.fn() } };
     const controller = new KeycloakCryptoLoginController(worker, "request-id", {}, {});
@@ -63,6 +107,48 @@ describe("Keycloak cryptographic SSO controllers", () => {
 
     expect(KeycloakCryptoSsoService.prototype.login).not.toHaveBeenCalled();
     expect(worker.port.emit).toHaveBeenCalledWith("request-id", "ERROR", expect.any(Error));
+  });
+
+  it("opens a Keycloak login Quick Access in detached mode without starting cryptographic login", async () => {
+    const openInDetachedMode = jest.spyOn(QuickAccessService, "openInDetachedMode").mockResolvedValue({ id: 42 });
+    const open = jest.spyOn(QuickAccessService, "open");
+    const worker = { name: "QuickAccess", port: { emit: jest.fn() } };
+    const controller = new KeycloakCryptoLoginOpenDetachedController(worker, "request-id");
+
+    await controller._exec();
+
+    expect(openInDetachedMode).toHaveBeenCalledWith([{ name: "feature", value: "keycloak-sso" }]);
+    expect(open).not.toHaveBeenCalled();
+    expect(KeycloakCryptoSsoService.prototype.login).not.toHaveBeenCalled();
+    expect(worker.port.emit).toHaveBeenCalledWith("request-id", "SUCCESS");
+    openInDetachedMode.mockRestore();
+    open.mockRestore();
+  });
+
+  it("rejects detached Keycloak login handoff outside Quick Access", async () => {
+    const openInDetachedMode = jest.spyOn(QuickAccessService, "openInDetachedMode").mockResolvedValue({ id: 42 });
+    const worker = { name: "App", port: { emit: jest.fn() } };
+    const controller = new KeycloakCryptoLoginOpenDetachedController(worker, "request-id");
+
+    await controller._exec();
+
+    expect(openInDetachedMode).not.toHaveBeenCalled();
+    expect(KeycloakCryptoSsoService.prototype.login).not.toHaveBeenCalled();
+    expect(worker.port.emit).toHaveBeenCalledWith("request-id", "ERROR", expect.any(Error));
+    openInDetachedMode.mockRestore();
+  });
+
+  it("reports detached Keycloak login handoff failures without starting cryptographic login", async () => {
+    const error = new Error("Window creation failed");
+    const openInDetachedMode = jest.spyOn(QuickAccessService, "openInDetachedMode").mockRejectedValue(error);
+    const worker = { name: "QuickAccess", port: { emit: jest.fn() } };
+    const controller = new KeycloakCryptoLoginOpenDetachedController(worker, "request-id");
+
+    await controller._exec();
+
+    expect(KeycloakCryptoSsoService.prototype.login).not.toHaveBeenCalled();
+    expect(worker.port.emit).toHaveBeenCalledWith("request-id", "ERROR", error);
+    openInDetachedMode.mockRestore();
   });
 
   it("allows cryptographic login from extension-owned Quick Access UI", async () => {
