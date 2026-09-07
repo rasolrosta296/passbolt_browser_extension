@@ -2,6 +2,7 @@ import Keyring from "../../model/keyring";
 import CheckPassphraseService from "../crypto/checkPassphraseService";
 import AuthVerifyLoginChallengeService from "../auth/authVerifyLoginChallengeService";
 import PostLoginService from "../auth/postLoginService";
+import PassphraseStorageService from "../session_storage/passphraseStorageService";
 import KeycloakCryptoSsoApiService from "../api/keycloakSso/keycloakCryptoSsoApiService";
 import BrowserProfileEnrollmentStorage from "./browserProfileEnrollmentStorage";
 import KeycloakCryptoEnvelopeService from "./keycloakCryptoEnvelopeService";
@@ -132,6 +133,7 @@ export default class KeycloakCryptoSsoService {
         this.account.userPrivateArmoredKey,
         passphrase,
       );
+      await PassphraseStorageService.set(passphrase, 60);
       await PostLoginService.exec();
     } finally {
       clearBytes(prepared?.transient?.clientNonce);

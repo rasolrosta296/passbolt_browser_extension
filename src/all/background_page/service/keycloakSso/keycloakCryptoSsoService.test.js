@@ -5,11 +5,13 @@ import KeycloakCryptoEnvelopeService from "./keycloakCryptoEnvelopeService";
 import KeycloakCryptoSsoService from "./keycloakCryptoSsoService";
 import KeycloakOidcTabService from "./keycloakOidcTabService";
 import CheckPassphraseService from "../crypto/checkPassphraseService";
+import PassphraseStorageService from "../session_storage/passphraseStorageService";
 
 jest.mock("../../model/keyring");
 jest.mock("../crypto/checkPassphraseService");
 jest.mock("../auth/authVerifyLoginChallengeService");
 jest.mock("../auth/postLoginService");
+jest.mock("../session_storage/passphraseStorageService");
 jest.mock("../api/keycloakSso/keycloakCryptoSsoApiService");
 jest.mock("./browserProfileEnrollmentStorage");
 jest.mock("./keycloakCryptoEnvelopeService");
@@ -42,6 +44,7 @@ describe("KeycloakCryptoSsoService authentication boundary", () => {
     KeycloakCryptoEnvelopeService.releaseRequest.mockResolvedValue({ request_id: "request", signature: "sig" });
     KeycloakCryptoEnvelopeService.recoverPassphrase.mockResolvedValue("dummy-passphrase");
     KeycloakOidcTabService.authenticate.mockResolvedValue();
+    CheckPassphraseService.prototype.checkPassphrase.mockResolvedValue();
     service = new KeycloakCryptoSsoService({}, account);
     service.api.startLogin.mockResolvedValue({
       authorization_url: "https://keycloak.example.test/authorize",
@@ -49,6 +52,7 @@ describe("KeycloakCryptoSsoService authentication boundary", () => {
     });
     service.api.release.mockResolvedValue({ enc: "enc", ciphertext: "ciphertext", context_hash: "hash" });
     AuthVerifyLoginChallengeService.prototype.verifyAndValidateLoginChallenge.mockResolvedValue();
+    PassphraseStorageService.set.mockResolvedValue();
     PostLoginService.exec.mockResolvedValue();
   });
 
@@ -109,10 +113,14 @@ describe("KeycloakCryptoSsoService authentication boundary", () => {
       account.userPrivateArmoredKey,
       "dummy-passphrase",
     );
+    expect(PassphraseStorageService.set).toHaveBeenCalledWith("dummy-passphrase", 60);
     expect(PostLoginService.exec).toHaveBeenCalledTimes(1);
-    expect(
-      AuthVerifyLoginChallengeService.prototype.verifyAndValidateLoginChallenge.mock.invocationCallOrder[0],
-    ).toBeLessThan(PostLoginService.exec.mock.invocationCallOrder[0]);
+    const gpgAuthOrder =
+      AuthVerifyLoginChallengeService.prototype.verifyAndValidateLoginChallenge.mock.invocationCallOrder[0];
+    const passphraseStorageOrder = PassphraseStorageService.set.mock.invocationCallOrder[0];
+    const postLoginOrder = PostLoginService.exec.mock.invocationCallOrder[0];
+    expect(gpgAuthOrder).toBeLessThan(passphraseStorageOrder);
+    expect(passphraseStorageOrder).toBeLessThan(postLoginOrder);
   });
 
   it("does not establish authentication when GPGAuth rejects a recovered passphrase", async () => {
@@ -121,6 +129,54 @@ describe("KeycloakCryptoSsoService authentication boundary", () => {
     );
     await expect(service.login()).rejects.toThrow("GPGAuth failed");
     expect(service.api.release).toHaveBeenCalled();
+    expect(PassphraseStorageService.set).not.toHaveBeenCalled();
+    expect(PostLoginService.exec).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [
+      "profile preparation",
+      () => KeycloakCryptoEnvelopeService.prepareLogin.mockRejectedValue(new Error("prepare failed")),
+    ],
+    [
+      "login transaction start",
+      (currentService) => currentService.api.startLogin.mockRejectedValue(new Error("start failed")),
+    ],
+    [
+      "fresh OIDC authentication",
+      () => KeycloakOidcTabService.authenticate.mockRejectedValue(new Error("OIDC failed")),
+    ],
+    [
+      "release-request creation",
+      () => KeycloakCryptoEnvelopeService.releaseRequest.mockRejectedValue(new Error("release request failed")),
+    ],
+    [
+      "server-share release",
+      (currentService) => currentService.api.release.mockRejectedValue(new Error("release failed")),
+    ],
+    [
+      "passphrase recovery",
+      () => KeycloakCryptoEnvelopeService.recoverPassphrase.mockRejectedValue(new Error("recovery failed")),
+    ],
+    [
+      "recovered-passphrase validation",
+      () => CheckPassphraseService.prototype.checkPassphrase.mockRejectedValue(new Error("check failed")),
+    ],
+  ])("does not store a passphrase or run post-login when %s fails", async (description, arrangeFailure) => {
+    arrangeFailure(service);
+
+    await expect(service.login()).rejects.toThrow();
+
+    expect(PassphraseStorageService.set).not.toHaveBeenCalled();
+    expect(PostLoginService.exec).not.toHaveBeenCalled();
+  });
+
+  it("does not run post-login if the standard short-lived passphrase storage write fails", async () => {
+    PassphraseStorageService.set.mockRejectedValue(new Error("storage failed"));
+
+    await expect(service.login()).rejects.toThrow("storage failed");
+
+    expect(AuthVerifyLoginChallengeService.prototype.verifyAndValidateLoginChallenge).toHaveBeenCalledTimes(1);
     expect(PostLoginService.exec).not.toHaveBeenCalled();
   });
 
@@ -132,6 +188,7 @@ describe("KeycloakCryptoSsoService authentication boundary", () => {
     expect(service.api.startLogin).not.toHaveBeenCalled();
     expect(KeycloakOidcTabService.authenticate).not.toHaveBeenCalled();
     expect(AuthVerifyLoginChallengeService.prototype.verifyAndValidateLoginChallenge).not.toHaveBeenCalled();
+    expect(PassphraseStorageService.set).not.toHaveBeenCalled();
     expect(PostLoginService.exec).not.toHaveBeenCalled();
   });
 
