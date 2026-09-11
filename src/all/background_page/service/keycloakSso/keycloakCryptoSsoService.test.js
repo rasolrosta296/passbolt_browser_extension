@@ -101,6 +101,7 @@ describe("KeycloakCryptoSsoService authentication boundary", () => {
     expect(KeycloakCryptoEnvelopeService.create).toHaveBeenCalledWith("dummy-passphrase", account, metadata);
     expect(KeycloakOidcTabService.authenticate).not.toHaveBeenCalled();
     expect(BrowserProfileEnrollmentStorage.save).toHaveBeenCalledWith(saved);
+    expect(PassphraseStorageService.set).not.toHaveBeenCalled();
     expect(saved).not.toHaveProperty("passphrase");
   });
 
@@ -202,6 +203,23 @@ describe("KeycloakCryptoSsoService authentication boundary", () => {
     BrowserProfileEnrollmentStorage.get.mockResolvedValue(null);
     await expect(service.hasLocalEnrollment()).resolves.toBe(false);
     expect(service.api.startLogin).not.toHaveBeenCalled();
+  });
+
+  it("combines server identity-link status with local browser-profile enrollment status", async () => {
+    service.api.getIdentityLinkStatus.mockResolvedValue({ linked: true });
+
+    await expect(service.getManagementStatus()).resolves.toEqual({ linked: true, enrolled: true });
+
+    service.api.getIdentityLinkStatus.mockResolvedValue({ linked: false });
+    await expect(service.getManagementStatus()).resolves.toEqual({ linked: false, enrolled: false });
+  });
+
+  it("rejects malformed server identity-link status", async () => {
+    service.api.getIdentityLinkStatus.mockResolvedValue({ linked: "true" });
+
+    await expect(service.getManagementStatus()).rejects.toThrow(
+      "The API returned an invalid Keycloak identity-link status.",
+    );
   });
 
   it("unlinks on the server before deleting the local enrollment", async () => {

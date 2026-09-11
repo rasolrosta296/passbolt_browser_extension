@@ -49,6 +49,10 @@ export default class KeycloakCryptoSsoApiService {
     ).body;
   }
 
+  async getIdentityLinkStatus() {
+    return (await this.client("/auth/keycloak/link/status").findAll()).body;
+  }
+
   client(resourceName) {
     this.apiClientOptions.setResourceName(resourceName);
     return new ApiClient(this.apiClientOptions);

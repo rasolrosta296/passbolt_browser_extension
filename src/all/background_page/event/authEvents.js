@@ -30,6 +30,8 @@ import KeycloakCryptoLoginController from "../controller/keycloakSso/keycloakCry
 import KeycloakCryptoLoginOpenDetachedController from "../controller/keycloakSso/keycloakCryptoLoginOpenDetachedController";
 import KeycloakCryptoEnrollmentStatusController from "../controller/keycloakSso/keycloakCryptoEnrollmentStatusController";
 import KeycloakIdentityUnlinkController from "../controller/keycloakSso/keycloakIdentityUnlinkController";
+import KeycloakIdentityLinkController from "../controller/keycloakSso/keycloakIdentityLinkController";
+import KeycloakIdentityLinkOpenDetachedController from "../controller/keycloakSso/keycloakIdentityLinkOpenDetachedController";
 
 /**
  * Listens to the authentication events
@@ -166,6 +168,16 @@ const listen = function (worker, apiClientOptions, account) {
 
   worker.port.on("passbolt.keycloak-sso.identity.unlink", async (requestId) => {
     const controller = new KeycloakIdentityUnlinkController(worker, requestId, apiClientOptions, account);
+    await controller._exec();
+  });
+
+  worker.port.on("passbolt.keycloak-sso.identity.link", async (requestId) => {
+    const controller = new KeycloakIdentityLinkController(worker, requestId, account);
+    await controller._exec();
+  });
+
+  worker.port.on("passbolt.keycloak-sso.identity.link.open-detached", async (requestId) => {
+    const controller = new KeycloakIdentityLinkOpenDetachedController(worker, requestId);
     await controller._exec();
   });
 

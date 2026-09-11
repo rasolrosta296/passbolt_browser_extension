@@ -51,6 +51,33 @@ async function openInDetachedMode(queryParameters = []) {
 }
 
 /**
+ * Open Quick Access in a durable browser tab.
+ *
+ * The tab remains an extension-owned surface. It uses detached Quick Access semantics so long-running
+ * Keycloak operations are never owned by the native toolbar popup that Chrome destroys on focus changes.
+ *
+ * @param {array<{name: string, value: string}>} queryParameters The non-sensitive bootstrap parameters
+ * @return {Promise<tabs.Tab>}
+ */
+async function openInTabMode(queryParameters = []) {
+  const workerId = uuidv4();
+  const tabQuickAccessQueryParameters = [
+    ...queryParameters,
+    { name: "uiMode", value: "detached" },
+    { name: "surface", value: "tab" },
+  ];
+  const url = await buildDetachedQuickaccessUrl(tabQuickAccessQueryParameters, workerId);
+  const quickAccessTab = await browser.tabs.create({ url, active: true });
+
+  if (!Number.isInteger(quickAccessTab?.id)) {
+    throw new Error("The Quick Access tab could not be created.");
+  }
+  await addWorkerQuickAccess(workerId, quickAccessTab.id);
+
+  return quickAccessTab;
+}
+
+/**
  * Add worker quickaccess in session storage
  * @param {string} workerId The worker id
  * @param {number} tabId The tab id
@@ -139,6 +166,7 @@ async function open(queryParameters = []) {
 
 export const QuickAccessService = {
   openInDetachedMode,
+  openInTabMode,
   openInAttachedMode,
   isAttachedModeAvailable,
   open,

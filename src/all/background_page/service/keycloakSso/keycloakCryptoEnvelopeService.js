@@ -56,42 +56,47 @@ export default class KeycloakCryptoEnvelopeService {
     };
     const contextBytes = encodeContext(context);
     decodeContext(contextBytes);
-    const passphraseBytes = textEncoder.encode(passphrase);
-    const innerIv = crypto.getRandomValues(new Uint8Array(12));
-    const outerIv = crypto.getRandomValues(new Uint8Array(12));
-    const c1 = new Uint8Array(
-      await crypto.subtle.encrypt(
-        {
-          name: "AES-GCM",
-          iv: innerIv,
-          additionalData: encodeBinding("inner_aad", context),
-          tagLength: 128,
-        },
-        kd,
-        passphraseBytes,
-      ),
-    );
-    const c2 = new Uint8Array(
-      await crypto.subtle.encrypt(
-        {
-          name: "AES-GCM",
-          iv: outerIv,
-          additionalData: encodeBinding("outer_aad", context),
-          tagLength: 128,
-        },
-        ks,
-        c1,
-      ),
-    );
-    const rawKs = new Uint8Array(await crypto.subtle.exportKey("raw", ks));
-    const clientBlobDigest = await sha256Hex(c2);
-    const shareDigest = await sha256Hex(rawKs);
-    const transcript = encodeEnrollmentTranscript(context, clientBlobDigest, shareDigest);
+    let passphraseBytes;
+    let c1;
+    let rawKs;
     let privateKey;
+    let transferredRawKs = false;
     try {
+      passphraseBytes = textEncoder.encode(passphrase);
+      const innerIv = crypto.getRandomValues(new Uint8Array(12));
+      const outerIv = crypto.getRandomValues(new Uint8Array(12));
+      c1 = new Uint8Array(
+        await crypto.subtle.encrypt(
+          {
+            name: "AES-GCM",
+            iv: innerIv,
+            additionalData: encodeBinding("inner_aad", context),
+            tagLength: 128,
+          },
+          kd,
+          passphraseBytes,
+        ),
+      );
+      const c2 = new Uint8Array(
+        await crypto.subtle.encrypt(
+          {
+            name: "AES-GCM",
+            iv: outerIv,
+            additionalData: encodeBinding("outer_aad", context),
+            tagLength: 128,
+          },
+          ks,
+          c1,
+        ),
+      );
+      rawKs = new Uint8Array(await crypto.subtle.exportKey("raw", ks));
+      const clientBlobDigest = await sha256Hex(c2);
+      const shareDigest = await sha256Hex(rawKs);
+      const transcript = encodeEnrollmentTranscript(context, clientBlobDigest, shareDigest);
       privateKey = await DecryptPrivateKeyService.decryptArmoredKey(account.userPrivateArmoredKey, passphrase);
       const message = await openpgp.createCleartextMessage({ text: bytesToBase64Url(transcript) });
       const openpgpSignature = await SignMessageService.signClearMessage(message, [privateKey]);
+      transferredRawKs = true;
       return {
         upload: {
           context_cbor: bytesToBase64(contextBytes),
@@ -121,6 +126,9 @@ export default class KeycloakCryptoEnvelopeService {
     } finally {
       clearBytes(passphraseBytes);
       clearBytes(c1);
+      if (!transferredRawKs) {
+        clearBytes(rawKs);
+      }
       privateKey = null;
     }
   }
@@ -248,8 +256,18 @@ export default class KeycloakCryptoEnvelopeService {
       !local ||
       local.kd?.type !== "secret" ||
       local.kd.extractable ||
+      local.kd.algorithm?.name !== "AES-GCM" ||
+      local.kd.algorithm?.length !== 256 ||
+      !equalStringArrays(local.kd.usages, ["decrypt", "encrypt"]) ||
       local.signingPrivateKey?.type !== "private" ||
       local.signingPrivateKey.extractable ||
+      local.signingPrivateKey.algorithm?.name !== "ECDSA" ||
+      local.signingPrivateKey.algorithm?.namedCurve !== "P-256" ||
+      !equalStringArrays(local.signingPrivateKey.usages, ["sign"]) ||
+      local.signingPublicKey?.type !== "public" ||
+      local.signingPublicKey.algorithm?.name !== "ECDSA" ||
+      local.signingPublicKey.algorithm?.namedCurve !== "P-256" ||
+      !equalStringArrays(local.signingPublicKey.usages, ["verify"]) ||
       local.context?.protocol_version !== PROTOCOL_VERSION ||
       local.context?.crypto_suite !== CRYPTO_SUITE
     ) {
@@ -260,4 +278,12 @@ export default class KeycloakCryptoEnvelopeService {
 
 function equalObjects(left, right) {
   return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function equalStringArrays(left, right) {
+  return (
+    Array.isArray(left) &&
+    left.length === right.length &&
+    [...left].sort().every((value, index) => value === [...right].sort()[index])
+  );
 }

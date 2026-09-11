@@ -79,6 +79,17 @@ export default class KeycloakCryptoSsoService {
     );
   }
 
+  async getManagementStatus() {
+    const status = await this.api.getIdentityLinkStatus();
+    if (typeof status?.linked !== "boolean") {
+      throw new Error("The API returned an invalid Keycloak identity-link status.");
+    }
+    return {
+      linked: status.linked,
+      enrolled: status.linked && (await this.hasLocalEnrollment()),
+    };
+  }
+
   async unlink() {
     const response = await this.api.unlinkIdentity();
     const clientEnrollmentUuids = response?.client_enrollment_uuids;

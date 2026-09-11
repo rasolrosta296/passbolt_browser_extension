@@ -11,10 +11,10 @@ export default class KeycloakCryptoEnrollmentOpenDetachedController {
       if (this.worker.name !== "QuickAccess") {
         throw new Error("Keycloak enrollment handoff is restricted to extension-owned Quick Access UI.");
       }
-      await QuickAccessService.openInDetachedMode([{ name: "feature", value: "keycloak-sso" }]);
+      await QuickAccessService.openInTabMode([{ name: "feature", value: "keycloak-sso" }]);
       this.worker.port.emit(this.requestId, "SUCCESS");
     } catch (error) {
-      console.error("Keycloak detached enrollment handoff failed.");
+      console.error("Keycloak enrollment tab handoff failed.");
       this.worker.port.emit(this.requestId, "ERROR", error);
     }
   }

@@ -4,7 +4,7 @@ export default class KeycloakOidcTabService {
   static async authenticate(authorizationUrl, passboltOrigin) {
     const authorization = new URL(authorizationUrl);
     const expectedOrigin = new URL(passboltOrigin).origin;
-    if (authorization.protocol !== "https:") {
+    if (authorization.protocol !== "https:" || authorization.username !== "" || authorization.password !== "") {
       throw new TypeError("The OIDC authorization URL must use HTTPS.");
     }
     const tab = await browser.tabs.create({ url: authorization.href, active: true });
@@ -23,14 +23,20 @@ export default class KeycloakOidcTabService {
           if (tabId !== tab.id || typeof changeInfo.url !== "string") {
             return;
           }
-          const current = new URL(changeInfo.url);
+          let current;
+          try {
+            current = new URL(changeInfo.url);
+          } catch {
+            return;
+          }
           if (current.origin !== expectedOrigin) {
             return;
           }
-          if (current.pathname === "/auth/keycloak/crypto/complete") {
+          const isExactCompletionUrl = current.search === "" && current.hash === "";
+          if (isExactCompletionUrl && current.pathname === "/auth/keycloak/crypto/complete") {
             cleanup();
             resolve();
-          } else if (current.pathname === "/auth/keycloak/error.json") {
+          } else if (isExactCompletionUrl && current.pathname === "/auth/keycloak/error.json") {
             cleanup();
             reject(new Error("Keycloak authentication failed."));
           }
