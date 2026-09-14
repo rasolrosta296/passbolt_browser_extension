@@ -77,7 +77,7 @@
     "webpack-cli": "^7.0.2"
   },
   "overrides": {
-    "@xmldom/xmldom": "0.8.14",
+    "@xmldom/xmldom": "0.8.15",
     "uuid": "^14.0.0",
     "shell-quote": "1.10.0",
     "js-yaml": "^4.2.0",
