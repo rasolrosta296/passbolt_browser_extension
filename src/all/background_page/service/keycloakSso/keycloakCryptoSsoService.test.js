@@ -214,6 +214,15 @@ describe("KeycloakCryptoSsoService authentication boundary", () => {
     await expect(service.getManagementStatus()).resolves.toEqual({ linked: false, enrolled: false });
   });
 
+  it("reports logged-out login availability from local enrollment without calling the API", async () => {
+    await expect(service.getLoginStatus()).resolves.toEqual({ enrolled: true });
+    expect(service.api.getIdentityLinkStatus).not.toHaveBeenCalled();
+
+    BrowserProfileEnrollmentStorage.get.mockResolvedValue(null);
+    await expect(service.getLoginStatus()).resolves.toEqual({ enrolled: false });
+    expect(service.api.getIdentityLinkStatus).not.toHaveBeenCalled();
+  });
+
   it("rejects malformed server identity-link status", async () => {
     service.api.getIdentityLinkStatus.mockResolvedValue({ linked: "true" });
 

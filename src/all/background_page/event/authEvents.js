@@ -28,6 +28,7 @@ import KeycloakCryptoEnrollmentOpenDetachedController from "../controller/keyclo
 import KeycloakCryptoEnrollmentStartController from "../controller/keycloakSso/keycloakCryptoEnrollmentStartController";
 import KeycloakCryptoLoginController from "../controller/keycloakSso/keycloakCryptoLoginController";
 import KeycloakCryptoLoginOpenDetachedController from "../controller/keycloakSso/keycloakCryptoLoginOpenDetachedController";
+import KeycloakCryptoLoginStatusController from "../controller/keycloakSso/keycloakCryptoLoginStatusController";
 import KeycloakCryptoEnrollmentStatusController from "../controller/keycloakSso/keycloakCryptoEnrollmentStatusController";
 import KeycloakIdentityUnlinkController from "../controller/keycloakSso/keycloakIdentityUnlinkController";
 import KeycloakIdentityLinkController from "../controller/keycloakSso/keycloakIdentityLinkController";
@@ -158,6 +159,11 @@ const listen = function (worker, apiClientOptions, account) {
 
   worker.port.on("passbolt.keycloak-sso.crypto-login.open-detached", async (requestId) => {
     const controller = new KeycloakCryptoLoginOpenDetachedController(worker, requestId);
+    await controller._exec();
+  });
+
+  worker.port.on("passbolt.keycloak-sso.crypto-login.get-status", async (requestId) => {
+    const controller = new KeycloakCryptoLoginStatusController(worker, requestId, apiClientOptions, account);
     await controller._exec();
   });
 

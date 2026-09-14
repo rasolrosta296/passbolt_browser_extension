@@ -90,6 +90,12 @@ export default class KeycloakCryptoSsoService {
     };
   }
 
+  async getLoginStatus() {
+    return {
+      enrolled: await this.hasLocalEnrollment(),
+    };
+  }
+
   async unlink() {
     const response = await this.api.unlinkIdentity();
     const clientEnrollmentUuids = response?.client_enrollment_uuids;

@@ -3,6 +3,7 @@ import KeycloakCryptoEnrollmentOpenDetachedController from "./keycloakCryptoEnro
 import KeycloakCryptoEnrollmentStartController from "./keycloakCryptoEnrollmentStartController";
 import KeycloakCryptoLoginController from "./keycloakCryptoLoginController";
 import KeycloakCryptoLoginOpenDetachedController from "./keycloakCryptoLoginOpenDetachedController";
+import KeycloakCryptoLoginStatusController from "./keycloakCryptoLoginStatusController";
 import KeycloakCryptoEnrollmentStatusController from "./keycloakCryptoEnrollmentStatusController";
 import KeycloakIdentityUnlinkController from "./keycloakIdentityUnlinkController";
 import KeycloakIdentityLinkController from "./keycloakIdentityLinkController";
@@ -164,6 +165,28 @@ describe("Keycloak cryptographic SSO controllers", () => {
 
     expect(KeycloakCryptoSsoService.prototype.login).toHaveBeenCalledTimes(1);
     expect(worker.port.emit).toHaveBeenCalledWith("request-id", "SUCCESS");
+  });
+
+  it("returns local login enrollment status without requiring an authenticated API session", async () => {
+    KeycloakCryptoSsoService.prototype.getLoginStatus.mockResolvedValue({ enrolled: true });
+    const worker = { name: "QuickAccess", port: { emit: jest.fn() } };
+    const controller = new KeycloakCryptoLoginStatusController(worker, "request-id", {}, {});
+
+    await controller._exec();
+
+    expect(KeycloakCryptoSsoService.prototype.getLoginStatus).toHaveBeenCalledTimes(1);
+    expect(KeycloakCryptoSsoService.prototype.getManagementStatus).not.toHaveBeenCalled();
+    expect(worker.port.emit).toHaveBeenCalledWith("request-id", "SUCCESS", { enrolled: true });
+  });
+
+  it("rejects local login enrollment status outside extension-owned Quick Access UI", async () => {
+    const worker = { name: "App", port: { emit: jest.fn() } };
+    const controller = new KeycloakCryptoLoginStatusController(worker, "request-id", {}, {});
+
+    await controller._exec();
+
+    expect(KeycloakCryptoSsoService.prototype.getLoginStatus).not.toHaveBeenCalled();
+    expect(worker.port.emit).toHaveBeenCalledWith("request-id", "ERROR", expect.any(Error));
   });
 
   it("returns identity-link and local-enrollment status only to extension-owned Quick Access UI", async () => {
