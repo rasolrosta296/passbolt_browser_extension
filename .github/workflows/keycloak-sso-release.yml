@@ -1,0 +1,106 @@
+name: Publish Keycloak SSO extension release candidate
+
+"on":
+  push:
+    tags:
+      - "keycloak-sso-v*"
+
+permissions: {}
+
+jobs:
+  release:
+    if: github.repository == 'rasolrosta296/passbolt_browser_extension'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+      packages: read
+    steps:
+      - name: Checkout exact tagged source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Verify release identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "${GITHUB_REF_NAME}" =~ ^keycloak-sso-v[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$ ]]; then
+            echo "::error::Invalid Keycloak SSO release-candidate tag."
+            exit 1
+          fi
+          test "${GITHUB_SHA}" = "$(git rev-parse HEAD)"
+          test -z "$(git status --short)"
+
+      - name: Set up Node.js and GitHub Packages
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.23.1
+          package-manager-cache: false
+          registry-url: https://npm.pkg.github.com
+          scope: "@rasolrosta296"
+
+      - name: Pin and verify npm runtime
+        run: |
+          npm install --global npm@10.9.2 --ignore-scripts
+          test "$(node --version)" = "v22.23.1"
+          test "$(npm --version)" = "10.9.2"
+
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify lockfile remains immutable
+        run: git diff --exit-code -- package.json package-lock.json
+
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --registry=https://registry.npmjs.org
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Run unit and security tests
+        run: npm run test:unit -- --runInBand
+
+      - name: Build and verify Chromium MV3 package
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run build:chromium-mv3
+          extension_version="$(node --print "require('./package.json').version")"
+          extension_archive="dist/chromium-mv3/passbolt-${extension_version}.zip"
+          test -f "${extension_archive}" || {
+            echo "::error::Expected Chromium MV3 build archive was not produced."
+            exit 1
+          }
+          unzip -tq "${extension_archive}"
+          archive_listing="$(unzip -Z1 "${extension_archive}")"
+          grep -Fxq 'manifest.json' <<< "${archive_listing}" || {
+            echo "::error::Chromium MV3 release archive has no root manifest.json."
+            exit 1
+          }
+          if grep -Eq '(^|/)[^/]+\.zip$' <<< "${archive_listing}"; then
+            echo "::error::Chromium MV3 release archive contains a nested ZIP."
+            exit 1
+          fi
+          (
+            cd dist/chromium-mv3
+            sha256sum "passbolt-${extension_version}.zip" > "passbolt-${extension_version}.zip.sha256"
+          )
+
+      - name: Create extension pre-release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          extension_version="$(node --print "require('./package.json').version")"
+          extension_archive="dist/chromium-mv3/passbolt-${extension_version}.zip"
+          gh release create "${GITHUB_REF_NAME}" \
+            "${extension_archive}" \
+            "${extension_archive}.sha256" \
+            --verify-tag \
+            --prerelease \
+            --title "Keycloak SSO extension ${GITHUB_REF_NAME#keycloak-sso-}" \
+            --notes "Desktop Chrome/Chromium MV3 release candidate. Extract the attached ZIP once and load the directory containing manifest.json. Firefox and Safari are not supported by this release."
