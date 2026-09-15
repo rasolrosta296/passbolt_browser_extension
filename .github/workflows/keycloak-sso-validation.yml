@@ -1,10 +1,10 @@
 name: Validate Keycloak SSO extension
 
-on:
+"on":
   push:
     branches:
       - feature/keycloak-sso-v1
-  workflow_dispatch:
+  workflow_dispatch: {}
 
 permissions: {}
 
