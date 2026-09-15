@@ -1,0 +1,71 @@
+name: Validate Keycloak SSO extension
+
+on:
+  push:
+    branches:
+      - feature/keycloak-sso-v1
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: keycloak-sso-extension-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    if: github.repository == 'rasolrosta296/passbolt_browser_extension'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js and GitHub Packages
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.23.1
+          package-manager-cache: false
+          registry-url: https://npm.pkg.github.com
+          scope: "@rasolrosta296"
+
+      - name: Pin npm runtime
+        run: npm install --global npm@10.9.2 --ignore-scripts
+
+      - name: Verify runtime
+        run: |
+          test "$(node --version)" = "v22.23.1"
+          test "$(npm --version)" = "10.9.2"
+
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify lockfile remains immutable
+        run: git diff --exit-code -- package.json package-lock.json
+
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --registry=https://registry.npmjs.org
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Run unit and security tests
+        run: npm run test:unit -- --runInBand
+
+      - name: Build Chromium MV3 extension
+        run: npm run build:chromium-mv3
+
+      - name: Upload Chromium MV3 package
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: passbolt-keycloak-sso-chromium-mv3-${{ github.sha }}
+          path: dist/chromium-mv3/*.zip
+          if-no-files-found: error
+          retention-days: 14
