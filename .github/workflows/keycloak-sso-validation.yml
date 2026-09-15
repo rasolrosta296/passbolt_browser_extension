@@ -65,10 +65,21 @@ jobs:
       - name: Stage unpacked Chromium MV3 extension
         run: |
           extension_version="$(node --print "require('./package.json').version")"
-          extension_directory="dist/chromium-mv3/passbolt-${extension_version}"
-          test -f "${extension_directory}/manifest.json"
+          extension_archive="dist/chromium-mv3/passbolt-${extension_version}.zip"
+          test -f "${extension_archive}" || {
+            echo "::error::Expected Chromium MV3 build archive was not produced."
+            exit 1
+          }
           mkdir -p artifact/chromium-mv3
-          cp -R "${extension_directory}/." artifact/chromium-mv3/
+          unzip -q "${extension_archive}" -d artifact/chromium-mv3
+          test -f artifact/chromium-mv3/manifest.json || {
+            echo "::error::Staged Chromium MV3 artifact has no manifest.json."
+            exit 1
+          }
+          test -z "$(find artifact/chromium-mv3 -type f -name '*.zip' -print -quit)" || {
+            echo "::error::Staged Chromium MV3 artifact contains a nested ZIP."
+            exit 1
+          }
 
       - name: Upload unpacked Chromium MV3 extension
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
