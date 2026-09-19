@@ -23,7 +23,7 @@
     "kdbxweb": "2.1.1",
     "openpgp": "^6.1.1",
     "papaparse": "^5.5.2",
-    "passbolt-styleguide": "npm:@rasolrosta296/passbolt-styleguide@5.15.1-keycloak.2",
+    "passbolt-styleguide": "npm:@rasolrosta296/passbolt-styleguide@5.15.1-keycloak.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "uuid": "^14.0.0",
