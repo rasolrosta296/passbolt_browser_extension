@@ -33,6 +33,8 @@ import KeycloakCryptoEnrollmentStatusController from "../controller/keycloakSso/
 import KeycloakIdentityUnlinkController from "../controller/keycloakSso/keycloakIdentityUnlinkController";
 import KeycloakIdentityLinkController from "../controller/keycloakSso/keycloakIdentityLinkController";
 import KeycloakIdentityLinkOpenDetachedController from "../controller/keycloakSso/keycloakIdentityLinkOpenDetachedController";
+import KeycloakGroupProvisioningCompleteController from "../controller/keycloakSso/keycloakGroupProvisioningCompleteController";
+import KeycloakGroupProvisioningPendingController from "../controller/keycloakSso/keycloakGroupProvisioningPendingController";
 
 /**
  * Listens to the authentication events
@@ -184,6 +186,16 @@ const listen = function (worker, apiClientOptions, account) {
 
   worker.port.on("passbolt.keycloak-sso.identity.link.open-detached", async (requestId) => {
     const controller = new KeycloakIdentityLinkOpenDetachedController(worker, requestId);
+    await controller._exec();
+  });
+
+  worker.port.on("passbolt.keycloak-sso.provisioning.groups.get-pending", async (requestId) => {
+    const controller = new KeycloakGroupProvisioningPendingController(worker, requestId, apiClientOptions, account);
+    await controller._exec();
+  });
+
+  worker.port.on("passbolt.keycloak-sso.provisioning.groups.complete", async (requestId) => {
+    const controller = new KeycloakGroupProvisioningCompleteController(worker, requestId, apiClientOptions, account);
     await controller._exec();
   });
 

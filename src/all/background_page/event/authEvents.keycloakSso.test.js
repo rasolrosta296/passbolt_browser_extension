@@ -1,11 +1,15 @@
 import KeycloakCryptoEnrollmentOpenDetachedController from "../controller/keycloakSso/keycloakCryptoEnrollmentOpenDetachedController";
 import KeycloakCryptoLoginOpenDetachedController from "../controller/keycloakSso/keycloakCryptoLoginOpenDetachedController";
 import KeycloakCryptoLoginStatusController from "../controller/keycloakSso/keycloakCryptoLoginStatusController";
+import KeycloakGroupProvisioningCompleteController from "../controller/keycloakSso/keycloakGroupProvisioningCompleteController";
+import KeycloakGroupProvisioningPendingController from "../controller/keycloakSso/keycloakGroupProvisioningPendingController";
 import { AuthEvents } from "./authEvents";
 
 jest.mock("../controller/keycloakSso/keycloakCryptoEnrollmentOpenDetachedController");
 jest.mock("../controller/keycloakSso/keycloakCryptoLoginOpenDetachedController");
 jest.mock("../controller/keycloakSso/keycloakCryptoLoginStatusController");
+jest.mock("../controller/keycloakSso/keycloakGroupProvisioningCompleteController");
+jest.mock("../controller/keycloakSso/keycloakGroupProvisioningPendingController");
 
 describe("AuthEvents Keycloak enrollment handoff", () => {
   it("registers and executes the detached enrollment handoff event", async () => {
@@ -71,5 +75,34 @@ describe("AuthEvents Keycloak enrollment handoff", () => {
       { id: "account" },
     );
     expect(KeycloakCryptoLoginStatusController.prototype._exec).toHaveBeenCalledTimes(1);
+  });
+
+  it("registers manager group-provisioning queue and completion events", async () => {
+    const listeners = new Map();
+    const worker = {
+      name: "QuickAccess",
+      port: {
+        on: jest.fn((name, listener) => listeners.set(name, listener)),
+      },
+    };
+    const apiClientOptions = { api: "options" };
+    const account = { id: "account" };
+    AuthEvents.listen(worker, apiClientOptions, account);
+
+    await listeners.get("passbolt.keycloak-sso.provisioning.groups.get-pending")("pending-request");
+    await listeners.get("passbolt.keycloak-sso.provisioning.groups.complete")("complete-request");
+
+    expect(KeycloakGroupProvisioningPendingController).toHaveBeenCalledWith(
+      worker,
+      "pending-request",
+      apiClientOptions,
+      account,
+    );
+    expect(KeycloakGroupProvisioningCompleteController).toHaveBeenCalledWith(
+      worker,
+      "complete-request",
+      apiClientOptions,
+      account,
+    );
   });
 });

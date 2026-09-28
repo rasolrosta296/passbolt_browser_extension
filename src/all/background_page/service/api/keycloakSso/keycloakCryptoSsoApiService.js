@@ -53,6 +53,14 @@ export default class KeycloakCryptoSsoApiService {
     return (await this.client("/auth/keycloak/link/status").findAll()).body;
   }
 
+  async getPendingGroupMemberships() {
+    return (await this.client("/auth/keycloak/provisioning/groups/pending").findAll()).body;
+  }
+
+  async completePendingGroupMembership(membershipId) {
+    return (await this.client(`/auth/keycloak/provisioning/groups/complete/${membershipId}`).create({})).body;
+  }
+
   client(resourceName) {
     this.apiClientOptions.setResourceName(resourceName);
     return new ApiClient(this.apiClientOptions);

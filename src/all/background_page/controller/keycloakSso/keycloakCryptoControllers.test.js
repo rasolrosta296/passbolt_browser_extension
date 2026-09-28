@@ -8,12 +8,16 @@ import KeycloakCryptoEnrollmentStatusController from "./keycloakCryptoEnrollment
 import KeycloakIdentityUnlinkController from "./keycloakIdentityUnlinkController";
 import KeycloakIdentityLinkController from "./keycloakIdentityLinkController";
 import KeycloakIdentityLinkOpenDetachedController from "./keycloakIdentityLinkOpenDetachedController";
+import KeycloakGroupProvisioningCompleteController from "./keycloakGroupProvisioningCompleteController";
+import KeycloakGroupProvisioningPendingController from "./keycloakGroupProvisioningPendingController";
 import KeycloakCryptoSsoService from "../../service/keycloakSso/keycloakCryptoSsoService";
+import KeycloakGroupProvisioningService from "../../service/keycloakSso/keycloakGroupProvisioningService";
 import KeycloakIdentityLinkTabService from "../../service/keycloakSso/keycloakIdentityLinkTabService";
 import { QuickAccessService } from "../../service/ui/quickAccess.service";
 
 jest.mock("../../service/keycloakSso/keycloakCryptoSsoService");
 jest.mock("../../service/keycloakSso/keycloakIdentityLinkTabService");
+jest.mock("../../service/keycloakSso/keycloakGroupProvisioningService");
 
 describe("Keycloak cryptographic SSO controllers", () => {
   beforeEach(() => {
@@ -263,5 +267,37 @@ describe("Keycloak cryptographic SSO controllers", () => {
 
     expect(KeycloakCryptoSsoService.prototype.unlink).not.toHaveBeenCalled();
     expect(worker.port.emit).toHaveBeenCalledWith("request-id", "ERROR", expect.any(Error));
+  });
+
+  it("returns manager-only Keycloak group provisioning work to Quick Access", async () => {
+    const items = [{ id: "item-id" }];
+    KeycloakGroupProvisioningService.prototype.findPending.mockResolvedValue(items);
+    const worker = { name: "QuickAccess", port: { emit: jest.fn() } };
+    const controller = new KeycloakGroupProvisioningPendingController(worker, "request-id", {}, {});
+
+    await controller._exec();
+
+    expect(worker.port.emit).toHaveBeenCalledWith("request-id", "SUCCESS", { items });
+  });
+
+  it("rejects Keycloak group provisioning work outside Quick Access", async () => {
+    const worker = { name: "App", port: { emit: jest.fn() } };
+    const controller = new KeycloakGroupProvisioningCompleteController(worker, "request-id", {}, {});
+
+    await controller._exec();
+
+    expect(KeycloakGroupProvisioningService.prototype.completePending).not.toHaveBeenCalled();
+    expect(worker.port.emit).toHaveBeenCalledWith("request-id", "ERROR", expect.any(Error));
+  });
+
+  it("completes Keycloak group provisioning only inside Quick Access", async () => {
+    KeycloakGroupProvisioningService.prototype.completePending.mockResolvedValue({ completed: 2 });
+    const worker = { name: "QuickAccess", port: { emit: jest.fn() } };
+    const controller = new KeycloakGroupProvisioningCompleteController(worker, "request-id", {}, {});
+
+    await controller._exec();
+
+    expect(KeycloakGroupProvisioningService.prototype.completePending).toHaveBeenCalledWith(worker);
+    expect(worker.port.emit).toHaveBeenCalledWith("request-id", "SUCCESS", { completed: 2 });
   });
 });
